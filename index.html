@@ -301,7 +301,6 @@ h1{margin:0 0 5px;font-size:25px}.sub{color:#64748b;margin-bottom:20px}.filters{
 <div class="panel-title">Current System Stock Import</div>
 <div class="sub">Admin only. Import your current system stock CSV using the exact columns: item_name, category_name, quantity_available, unit. SKU and Sub Category are taken automatically from the Admin Rate Update master.</div>
 <div class="filters">
-<div class="field"><label>Closing Date</label><input type="date" id="systemStockDate"></div>
 <button class="btn light" onclick="downloadSystemStockTemplate()">⬇ Download System Stock Template</button>
 <div class="field"><label>CSV File</label><input type="file" id="systemStockCsv" accept=".csv,text/csv"></div>
 <button class="btn primary" onclick="importSystemStockCSV()">⬆ Import / Update System Stock</button>
@@ -364,109 +363,81 @@ h1{margin:0 0 5px;font-size:25px}.sub{color:#64748b;margin-bottom:20px}.filters{
 </div>
 </main></div>
 
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script>
-const firebaseConfig = {
-  apiKey: "AIzaSyDusDR73RLP3hrFfCnAJggBp-md4zHEPcw",
-  authDomain: "ck-inventory-book.firebaseapp.com",
-  databaseURL: "https://ck-inventory-book-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "ck-inventory-book",
-  storageBucket: "ck-inventory-book.firebasestorage.app",
-  messagingSenderId: "461783464675",
-  appId: "1:461783464675:web:69b8669918ea431e3e63d6",
-  measurementId: "G-YXR78J17VS"
-};
-const firebaseApp = firebase.initializeApp(firebaseConfig);
-const firebaseAuth = firebase.auth();
-const firebaseDb = firebase.database();
-let firebaseUser = null;
-let firebaseDataLoaded = false;
-let firebaseSecondaryApp = null;
-function remoteArray(v){ return Array.isArray(v) ? v : Object.values(v||{}); }
-function normalizeRemoteData(d){
-  d=d||{};
-  d.closings=remoteArray(d.closings); d.rates=remoteArray(d.rates); d.audit=remoteArray(d.audit);
-  d.systemStock=remoteArray(d.systemStock); d.countedStock=remoteArray(d.countedStock); d.users=remoteArray(d.users);
-  d.closingSchedule=remoteArray(d.closingSchedule);
-  return d;
-}
-function remoteSafeData(){
-  const copy=JSON.parse(JSON.stringify(data||{}));
-  copy.users=remoteArray(copy.users).map(u=>({email:u.email||'',uid:u.uid||'',permissions:Array.isArray(u.permissions)?u.permissions:[],active:u.active!==false}));
-  return copy;
-}
-async function saveRemote(){
-  if(!firebaseUser) return;
-  await firebaseDb.ref('appData').set(remoteSafeData());
-}
-async function loadRemoteData(){
-  const snap=await firebaseDb.ref('appData').once('value');
-  if(snap.exists()){ data=normalizeRemoteData(snap.val()); }
-  else { data=normalizeRemoteData(data); await firebaseDb.ref('appData').set(remoteSafeData()); }
-  firebaseDataLoaded=true;
-}
-function getSecondaryAuth(){
-  if(!firebaseSecondaryApp) firebaseSecondaryApp=firebase.initializeApp(firebaseConfig,'CKInventoryBookSecondary');
-  return firebaseSecondaryApp.auth();
-}
-async function createFirebaseTeamUser(email,password){
-  const a=getSecondaryAuth();
-  try{ const cred=await a.createUserWithEmailAndPassword(email,password); return cred.user.uid; }
-  finally{ try{await a.signOut();}catch(e){} }
-}
 const KEY='inventoryProData';
 const STOCK_RESET_KEY='ckInventoryBookStockReset_v1';
 const CLOSING_RESET_KEY='ckInventoryBookClosingReset_v1';
-let data=normalizeRemoteData(JSON.parse(localStorage.getItem(KEY)||'{"closings":[],"rates":[],"audit":[],"systemStock":[],"countedStock":[],"users":[]}'));
+let data=JSON.parse(localStorage.getItem(KEY)||'{"closings":[],"rates":[],"audit":[],"systemStock":[],"countedStock":[],"users":[]}');
 if(!Array.isArray(data.systemStock)) data.systemStock=[];
 if(!Array.isArray(data.countedStock)) data.countedStock=[];
 if(!Array.isArray(data.users)) data.users=[];
-if(!Array.isArray(data.closingSchedule) || !data.closingSchedule.length) data.closingSchedule=[
+// One-time cleanup for the new operational start: clear stock and inventory closing data.
+// Rates, closing schedules, users and audit history are intentionally preserved.
+if(localStorage.getItem(STOCK_RESET_KEY)!=='done'){
+  data.systemStock=[];
+  data.countedStock=[];
+  localStorage.setItem(STOCK_RESET_KEY,'done');
+}
+if(localStorage.getItem(CLOSING_RESET_KEY)!=='done'){
+  data.closings=[];
+  localStorage.setItem(CLOSING_RESET_KEY,'done');
+}
+localStorage.setItem(KEY,JSON.stringify(data));
+if(!Array.isArray(data.closingSchedule)) data.closingSchedule=[
   {date:'2026-09-09',time:'',type:'Weekly'},
   {date:'2026-09-15',time:'',type:'Weekly'},
   {date:'2026-09-22',time:'',type:'Weekly'},
   {date:'2026-09-30',time:'',type:'MTD'}
 ];
-// Legacy cleanup flags are retained only for local copies. Firebase data is never cleared by page load.
-localStorage.setItem(KEY,JSON.stringify(data));
+// Clean up legacy duplicate Bulk Rate Import audit rows: one bulk action = one log entry.
+if(Array.isArray(data.audit)){
+ const seenBulk=new Set();
+ data.audit=data.audit.filter(a=>{
+  if(a && a.action==='Bulk Rate Import'){
+   const k=String(a.time||'')+'|'+String(a.by||'');
+   if(seenBulk.has(k)) return false;
+   seenBulk.add(k);
+   return true;
+  }
+  return true;
+ });
+ save();
+}
 let role=''; let loggedEmail=''; let filtered=[]; let chartMode='bar';
 window.userPermissions=[];
 const ALL_PERMISSIONS=['dashboard','closing','editClosing','reports','items','exportExcel','exportPDF'];
 const money=n=>'₹'+Number(n||0).toLocaleString('en-IN',{maximumFractionDigits:2});
-const qtyDisplay=n=>Number(n||0).toLocaleString('en-IN',{maximumFractionDigits:3});
+const qtyDisplay=n=>Number(n||0).toLocaleString('en-IN',{maximumFractionDigits:2});
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
-function save(){
-  localStorage.setItem(KEY,JSON.stringify(data));
-  if(firebaseUser) saveRemote().catch(e=>console.error('Firebase save failed:',e));
-}
-async function login(){
+function save(){localStorage.setItem(KEY,JSON.stringify(data))}
+function login(){
  try{
   const u=(document.getElementById('loginUser')?.value||'').trim().toLowerCase();
   const p=(document.getElementById('loginPass')?.value||'').trim();
-  if(!u||!p){document.getElementById('loginError').textContent='Enter email and password.';return false;}
-  const cred=await firebaseAuth.signInWithEmailAndPassword(u,p);
-  firebaseUser=cred.user;
-  await loadRemoteData();
-  const isAdmin=u==='zakariya@ristarafoods.com';
-  if(isAdmin){ role='Admin'; loggedEmail=u; window.userPermissions=ALL_PERMISSIONS.slice(); }
-  else {
-    const found=remoteArray(data.users).find(x=>String(x.email||'').toLowerCase()===u || String(x.uid||'')===String(firebaseUser.uid));
-    if(!found || found.active===false){ await firebaseAuth.signOut(); firebaseUser=null; throw new Error('This Firebase user has no active CK Inventory Book access. Ask Admin to add permissions.'); }
-    role='User'; loggedEmail=u; window.userPermissions=Array.isArray(found.permissions)?found.permissions:[];
+  let valid=false, perms=[];
+  // Super Admin login is tied to the owner's email address.
+  if(u==='zakariya@ristarafoods.com' && p==='admin123'){
+    valid=true; role='Admin'; loggedEmail='zakariya@ristarafoods.com'; perms=ALL_PERMISSIONS.slice();
+  }else{
+    const found=data.users.find(x=>String(x.email||'').toLowerCase()===u && String(x.password||'')===p && x.active!==false);
+    if(found){valid=true;role='User';loggedEmail=u;perms=Array.isArray(found.permissions)?found.permissions:[];}
   }
+  if(!valid){
+    const e=document.getElementById('loginError'); if(e)e.textContent='Invalid email or password. Team users must be created in Admin → Team Access Management.';
+    return false;
+  }
+  window.userPermissions=perms;
   const loginBox=document.getElementById('login'); if(loginBox)loginBox.style.display='none';
   const info=document.getElementById('userInfo'); if(info)info.textContent=`Logged in: ${loggedEmail} (${role})`;
   const err=document.getElementById('loginError'); if(err)err.textContent='';
   initDates(); updateTopHeader('dashboard'); applyMenuPermissions(); renderAll();
   return true;
  }catch(err){
-  const e=document.getElementById('loginError'); if(e)e.textContent='Login failed: '+(err.code==='auth/invalid-credential'?'Invalid email or password.':err.message);
+  const e=document.getElementById('loginError'); if(e)e.textContent='Login error: '+err.message;
   console.error(err); return false;
  }
 }
-async function logout(){try{await firebaseAuth.signOut();}catch(e){} location.reload()}
+function logout(){location.reload()}
 function toggleSidebar(){document.getElementById('sidebar').classList.toggle('collapsed')}
 function hasAccess(id){
  if(role==='Admin') return true;
@@ -512,7 +483,7 @@ function nextClosingDate(){
  return upcoming?.date || sortedClosingSchedule().slice(-1)[0]?.date || today;
 }
 function initDates(){
- const ids=['fromDate','toDate','cDate','rDate','systemStockDate'];
+ const ids=['fromDate','toDate','cDate','rDate'];
  ids.forEach(id=>{const el=document.getElementById(id); if(el) el.value='';});
  renderClosingScheduleButtons();
 }
@@ -558,15 +529,28 @@ function normalizeScheduleTypes(){
  (Array.isArray(data.closingSchedule)?data.closingSchedule:[]).forEach(x=>{if(String(x.type||'').toUpperCase()==='MTR')x.type='MTD';});
 }
 function latestRateMaster(){
+ const rates=Array.isArray(data.rates)?data.rates:[];
  const map={};
- (Array.isArray(data.rates)?data.rates:[]).forEach(r=>{
+ rates.forEach(r=>{
    const sku=String(r.sku||'').trim();
    if(!sku)return;
    const key=sku.toLowerCase();
    const prev=map[key];
    const rd=String(r.date||'');
    const rt=String(r.timestamp||r.timeStamp||'');
-   if(!prev || rd>String(prev.date||'') || (rd===String(prev.date||'') && rt>String(prev.timestamp||prev.timeStamp||''))) map[key]=r;
+   if(!prev || rd>String(prev.date||'') || (rd===String(prev.date||'') && rt>String(prev.timestamp||prev.timeStamp||''))) map[key]={...r};
+ });
+ // Backfill master fields from the latest non-blank record for the same SKU.
+ // This protects older imports/manual rate updates that may not have stored Category/Sub Category.
+ Object.keys(map).forEach(key=>{
+   const current=map[key];
+   const history=rates.filter(r=>String(r.sku||'').trim().toLowerCase()===key)
+     .sort((a,b)=>{const ad=String(a.date||''),bd=String(b.date||''); if(ad!==bd)return bd.localeCompare(ad); return String(b.timestamp||b.timeStamp||'').localeCompare(String(a.timestamp||a.timeStamp||''));});
+   const firstNonBlank=(field)=>{const hit=history.find(r=>String(r[field]??'').trim()!==''); return hit?hit[field]:''};
+   if(!String(current.item||'').trim()) current.item=firstNonBlank('item');
+   if(!String(current.unit||'').trim()) current.unit=firstNonBlank('unit');
+   if(!String(current.category||'').trim()) current.category=firstNonBlank('category');
+   if(!String(current.subcat||'').trim()) current.subcat=firstNonBlank('subcat');
  });
  return Object.values(map);
 }
@@ -592,7 +576,7 @@ function updateClosingItemFromSelection(){
  if(rec){
    if(skuEl)skuEl.value=rec.sku||'';
    if(catEl)catEl.value=rec.category||'';
-   const stock=stockForDate(rec.sku,document.getElementById('cDate')?.value||'');
+   const stock=data.systemStock.find(x=>String(x.sku||'').toLowerCase()===String(rec.sku||'').toLowerCase());
    const sys=document.getElementById('cSystem');
    if(sys)sys.value=stock?Number(stock.quantity_available):'';
    const rate=document.getElementById('cRate');
@@ -631,16 +615,6 @@ function updateRateItemFromSelection(){
  }
 }
 
-function stockForDate(sku,date){
- const d=String(date||'').trim();
- if(!d)return null;
- return remoteArray(data.systemStock).find(x=>String(x.sku||'').toLowerCase()===String(sku||'').toLowerCase()&&String(x.date||'')===d)||null;
-}
-function countedForDate(sku,date){
- const d=String(date||'').trim();
- if(!d)return null;
- return remoteArray(data.countedStock).find(x=>String(x.itemNo||'').toLowerCase()===String(sku||'').toLowerCase()&&String(x.date||'')===d)||null;
-}
 function applicableRate(sku,date,fallback){
  let rs=data.rates.filter(r=>r.sku.toLowerCase()===sku.toLowerCase()&&r.date<=date).sort((a,b)=>b.date.localeCompare(a.date));
  return rs.length?Number(rs[0].rate):Number(fallback||0)
@@ -668,15 +642,11 @@ function nextClosingDocumentNumber(date){
  let no; do{no='CKC-'+d+'-'+String(n++).padStart(3,'0')}while(existing.has(no));
  return no;
 }
-async function adminPasswordCheck(action){
+function adminPasswordCheck(action){
  const password=prompt('Admin password required to '+action+':');
  if(password===null)return false;
- if(role!=='Admin'||!firebaseUser||String(firebaseUser.email||'').toLowerCase()!=='zakariya@ristarafoods.com'){alert('Admin authentication is required.');return false;}
- try{
-   const cred=firebase.auth.EmailAuthProvider.credential(firebaseUser.email,password);
-   await firebaseUser.reauthenticateWithCredential(cred);
-   return true;
- }catch(e){alert('Incorrect Admin password.');return false;}
+ if(password!=='admin123'){alert('Incorrect Admin password.');return false;}
+ return true;
 }
 
 function refreshSubCategoryFilter(){
@@ -809,12 +779,12 @@ function renderClosing(){
  }).join('');
  document.getElementById('closingTable').innerHTML=head+(body||'<tr><td colspan="11" style="text-align:center;color:#94a3b8">No closing entries</td></tr>');
 }
-async function deleteClosingLine(index){
+function deleteClosingLine(index){
  if(role!=='Admin' && !hasAccess('editClosing'))return alert('Edit Closing Qty access is not assigned to your email. Please contact Admin.');
  if(!Number.isInteger(index)||index<0||index>=data.closings.length)return;
  const x=data.closings[index];
  if(!confirm(`Delete closing entry for ${x.item||x.sku} on ${x.date}?`))return;
- if(!(await adminPasswordCheck('delete this closing entry')))return;
+ if(!adminPasswordCheck('delete this closing entry'))return;
  data.closings.splice(index,1);
  data.audit.push({time:new Date().toLocaleString(),by:loggedEmail||'admin',action:'Closing Entry Deleted'});
  save();renderAll();
@@ -892,40 +862,28 @@ function renderCategoryVariance(){
 
 function renderItems(){let q=(document.getElementById('itemSearch')?.value||'').toLowerCase(),r=filtered.filter(x=>(x.sku+' '+x.item).toLowerCase().includes(q));document.getElementById('itemTable').innerHTML='<tr><th>SKU</th><th>Item</th><th>Category</th><th>Total Var Qty</th><th>Variance Value</th><th>Worst Status</th></tr>'+Object.values(r.reduce((o,x)=>{let k=x.sku;o[k]??={sku:x.sku,item:x.item,cat:x.cat,q:0,v:0};o[k].q+=x.varQty;o[k].v+=x.value;return o},{})).map(x=>`<tr><td>${esc(x.sku)}</td><td>${esc(x.item)}</td><td>${esc(x.cat)}</td><td>${Number(x.q||0).toFixed(3)}</td><td>${money(x.v)}</td><td>${x.v<0?'SHORT':x.v>0?'EXCESS':'MATCHED'}</td></tr>`).join('')}
 
-async function saveTeamAccess(){
+function saveTeamAccess(){
  if(role!=='Admin')return alert('Admin only');
  const email=document.getElementById('accessEmail').value.trim().toLowerCase();
  const password=document.getElementById('accessPassword').value.trim();
  if(!email||!email.includes('@'))return alert('Enter a valid email address.');
+ if(!password)return alert('Set a password for this team member.');
  const permissions=[];
  ['Dashboard','Closing','Edit Closing','Variance','Items','Excel','PDF'].forEach((n,i)=>{
    const ids=['permDashboard','permClosing','permEditClosing','permVariance','permItems','permExcel','permPDF'];
    if(document.getElementById(ids[i]).checked) permissions.push(ALL_PERMISSIONS[i]);
  });
- let u=remoteArray(data.users).find(x=>String(x.email||'').toLowerCase()===email);
- let uid=u?.uid||'';
- try{
-   if(!uid){
-     if(!password)return alert('Set a password for this new team member.');
-     uid=await createFirebaseTeamUser(email,password);
-     u={email,uid,permissions,active:true};
-     data.users.push(u);
-   }else{
-     u.email=email; u.uid=uid; u.permissions=permissions; u.active=true;
-     if(password) console.warn('Password change for an existing Firebase user requires a secure password-reset flow; permissions were updated.');
-   }
-   data.audit.push({time:new Date().toLocaleString(),by:loggedEmail||'admin',action:'Team Access Updated'});
-   save(); renderAll(); clearAccessForm();
-   document.getElementById('accessStatus').innerHTML='<span class="success" style="padding:8px;border-radius:8px;display:inline-block">Access saved for '+esc(email)+'. Firebase Authentication is managing the password.</span>';
- }catch(e){
-   alert('Could not create/update Firebase user: '+(e.code||e.message));
- }
+ let u=data.users.find(x=>x.email===email);
+ if(u){u.password=password;u.permissions=permissions;u.active=true;}
+ else data.users.push({email,password,permissions,active:true});
+ data.audit.push({time:new Date().toLocaleString(),by:'admin',action:'Team Access Updated',sku:email,old:'-',new:permissions.join(', ')});
+ save(); renderAll(); clearAccessForm();
+ document.getElementById('accessStatus').innerHTML='<span class="success" style="padding:8px;border-radius:8px;display:inline-block">Access saved for '+esc(email)+'.</span>';
 }
 function editTeamAccess(email){
  const u=data.users.find(x=>x.email===email); if(!u)return;
  document.getElementById('accessEmail').value=u.email;
- document.getElementById('accessPassword').value='';
- document.getElementById('accessPassword').placeholder='Only needed when creating a new user';
+ document.getElementById('accessPassword').value=u.password;
  const map={permDashboard:'dashboard',permClosing:'closing',permEditClosing:'editClosing',permVariance:'reports',permItems:'items',permExcel:'exportExcel',permPDF:'exportPDF'};
  Object.entries(map).forEach(([id,p])=>document.getElementById(id).checked=u.permissions.includes(p));
 }
@@ -1008,13 +966,13 @@ function searchClosingDocument(){
  const x=data.closings[idx];
  if(el)el.innerHTML=`<div class="filters" style="align-items:end"><div class="field"><label>Document No.</label><input value="${esc(x.docNo)}" readonly></div><div class="field"><label>Item</label><input value="${esc(x.item)}" readonly></div><div class="field"><label>Current Date</label><input value="${esc(x.date)}" readonly></div><div class="field"><label>New Date</label><input type="date" id="adminDocNewDate" value=""></div><button class="btn primary" type="button" onclick="updateClosingDocumentDate(${idx})">Update Date</button><button class="btn danger" type="button" onclick="deleteClosingDocument(${idx})">Delete Document</button></div>`;
 }
-async function updateClosingDocumentDate(index){
+function updateClosingDocumentDate(index){
  if(role!=='Admin')return alert('Admin only');
  const x=data.closings[index]; if(!x)return;
  const newDate=document.getElementById('adminDocNewDate')?.value||'';
  if(!newDate)return alert('Select the new closing date.');
  if(newDate===x.date)return alert('The new date is the same as the current date.');
- if(!(await adminPasswordCheck('change the closing document date')))return;
+ if(!adminPasswordCheck('change the closing document date'))return;
  const oldDate=x.date; x.date=newDate;
  if(Number.isFinite(Number(x.rate))&&Number(x.rate)>0){ x.rate=applicableRate(x.sku,newDate,x.rate); }
  data.audit.push({time:new Date().toLocaleString(),by:loggedEmail||'admin',action:'Closing Document Date Updated'});
@@ -1023,11 +981,11 @@ async function updateClosingDocumentDate(index){
  searchClosingDocument();
  alert('Document date updated from '+oldDate+' to '+newDate+'.');
 }
-async function deleteClosingDocument(index){
+function deleteClosingDocument(index){
  if(role!=='Admin')return alert('Admin only');
  const x=data.closings[index]; if(!x)return;
  if(!confirm(`Delete document ${x.docNo||''} for ${x.item||x.sku}?`))return;
- if(!(await adminPasswordCheck('delete this closing document')))return;
+ if(!adminPasswordCheck('delete this closing document'))return;
  data.closings.splice(index,1);
  data.audit.push({time:new Date().toLocaleString(),by:loggedEmail||'admin',action:'Closing Document Deleted'});
  save();renderAll();
@@ -1039,23 +997,22 @@ function addClosing(){
  const sku=String(document.getElementById('cSku')?.value||'').trim();
  const itemInput=document.getElementById('cItem');
  const itemRec=latestRateMaster().find(x=>String(x.sku||'').toLowerCase()===sku.toLowerCase());
- const closingDate=document.getElementById('cDate')?.value||'';
- const stock=stockForDate(sku,closingDate);
- const counted=countedForDate(sku,closingDate);
+ const stock=data.systemStock.find(x=>String(x.sku||'').toLowerCase()===sku.toLowerCase());
+ const counted=data.countedStock?.find(x=>String(x.itemNo||'').toLowerCase()===sku.toLowerCase());
  const systemEl=document.getElementById('cSystem');
  const systemValue=systemEl?.value!==''?Number(systemEl.value):(stock?Number(stock.quantity_available):NaN);
  const item=itemRec?.item||itemInput?.value?.trim()||'';
  const cat=itemRec?.category||'';
  const subcat=itemRec?.subcat||counted?.subCategory||'';
+ const closingDate=document.getElementById('cDate')?.value||'';
  const rateValue=applicableRate(sku,closingDate,itemRec?.rate||0);
  const physicalEl=document.getElementById('cPhysical');
  const physical=physicalEl?.value!==''?Number(physicalEl.value):NaN;
  const x={docNo:nextClosingDocumentNumber(closingDate),date:closingDate,sku,item,uom:itemRec?.unit||stock?.unit||counted?.uom||'',cat,subcat,system:systemValue,physical,rate:rateValue};
  if(!x.date||!x.sku||!x.item||Number.isNaN(x.system)||Number.isNaN(x.physical))return alert('Select Item Name, Closing Date and enter valid Physical Qty. System Qty and Category will fill automatically.');
  if(!rateValue)return alert('No applicable rate found for this SKU on the closing date. Please update/import the rate in Admin first.');
- data.closings.push(x);
- data.audit.push({time:new Date().toLocaleString(),by:loggedEmail||'admin',action:'Closing Entry Added'});
- save();renderAll();
+ data.closings.push(x);save();renderAll();
+ // Clear entry fields after a successful save so the next closing line starts blank.
  if(itemInput)itemInput.value='';
  const skuEl=document.getElementById('cSku'); if(skuEl)skuEl.value='';
  const catEl=document.getElementById('cCat'); if(catEl)catEl.value='';
@@ -1065,14 +1022,13 @@ function addClosing(){
  const rateEl=document.getElementById('cRate'); if(rateEl)rateEl.value='';
  alert('Closing saved with automatic applicable rate: '+money(rateValue)+'\nEntry fields have been cleared for the next entry.');
 }
+
 function downloadSystemStockTemplate(){
  const rows=[['item_name','category_name','quantity_available','unit'],['Rice','Raw Material','125','KG'],['Toor Dal','Raw Material','80','KG']];
  download('current_system_stock_template.csv','text/csv;charset=utf-8','\ufeff'+rows.map(r=>r.map(csvEscape).join(',')).join('\r\n'));
 }
 function importSystemStockCSV(){
  if(role!=='Admin')return alert('Only Admin can import current system stock.');
- const closingDate=document.getElementById('systemStockDate')?.value||'';
- if(!closingDate)return alert('Select the scheduled closing date before importing System Stock.');
  const file=document.getElementById('systemStockCsv').files[0]; if(!file)return alert('Please select the current system stock CSV file.');
  const reader=new FileReader();
  reader.onload=()=>{
@@ -1082,21 +1038,18 @@ function importSystemStockCSV(){
    const required=['item_name','category_name','quantity_available','unit'];
    const missing=required.filter(x=>!headers.includes(x)); if(missing.length)return alert('Missing required columns: '+missing.join(', '));
    const ix=x=>headers.indexOf(x); let added=0,updated=0,errors=[];
-   // Replace only this date's snapshot; previous closing dates remain untouched.
-   data.systemStock=remoteArray(data.systemStock).filter(x=>String(x.date||'')!==closingDate);
    matrix.slice(1).forEach((r,i)=>{
     const line=i+2,item=(r[ix('item_name')]||'').trim(),category=(r[ix('category_name')]||'').trim(),qty=Number(String(r[ix('quantity_available')]||'').replace(/,/g,'')),unit=(r[ix('unit')]||'').trim();
     const master=rateMasterForItem(item);
     if(!item||!category||!unit||Number.isNaN(qty)||!master){errors.push('Line '+line+(master?'':' - item not found in Rate Update'));return;}
     const sku=master.sku,subCategory=master.subcat||'';
-    data.systemStock.push({date:closingDate,sku,item_name:item,category_name:master.category||category,sub_category_name:subCategory,quantity_available:qty,unit});
-    added++;
+    const existing=data.systemStock.find(x=>String(x.sku||'').toLowerCase()===sku.toLowerCase());
+    if(existing){existing.item_name=item;existing.category_name=master.category||category;existing.sub_category_name=subCategory;existing.quantity_available=qty;existing.unit=unit;updated++;}
+    else{data.systemStock.push({sku,item_name:item,category_name:master.category||category,sub_category_name:subCategory,quantity_available:qty,unit});added++;}
    });
-   data.audit.push({time:new Date().toLocaleString(),by:loggedEmail||'admin',action:'System Stock Snapshot Import'});
    save();renderAll();document.getElementById('systemStockCsv').value='';
-   document.getElementById('systemStockStatus').innerHTML='<span class="success" style="padding:8px;border-radius:8px;display:inline-block">System stock snapshot saved for '+closingDate+'. Items: '+added+(errors.length?' | Errors: '+errors.length:'')+'. Previous closing snapshots remain saved in Firebase.</span>';
-   alert('System stock saved for '+closingDate+'. The snapshot will not be overwritten by future closing dates.');
-   document.getElementById('systemStockDate').value='';
+   document.getElementById('systemStockStatus').innerHTML='<span class="success" style="padding:8px;border-radius:8px;display:inline-block">System stock updated. Added: '+added+' | Updated: '+updated+(errors.length?' | Errors: '+errors.length:'')+'</span>';
+   alert('Current system stock import completed. SKU and Sub Category were taken from Admin Rate Update.');
   }catch(e){alert('Could not read CSV: '+e.message)}
  };
  reader.readAsText(file);
@@ -1104,11 +1057,11 @@ function importSystemStockCSV(){
 function renderSystemStock(){
  const el=document.getElementById('systemStockTable');
  if(!el)return;
- const r=remoteArray(data.systemStock).slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||String(a.sku||'').localeCompare(String(b.sku||'')));
- el.innerHTML='<tr><th>Date</th><th>SKU</th><th>Item Name</th><th>Category</th><th>Sub Category</th><th>Quantity Available</th><th>Unit</th></tr>'+
- r.map(x=>`<tr><td>${esc(x.date||'')}</td><td>${esc(x.sku)}</td><td>${esc(x.item_name)}</td><td>${esc(x.category_name)}</td><td>${esc(x.sub_category_name||x.subCategory||'')}</td><td>${Number(x.quantity_available||0).toLocaleString('en-IN')}</td><td>${esc(x.unit)}</td></tr>`).join('');
+ const r=data.systemStock.slice().sort((a,b)=>a.sku.localeCompare(b.sku));
+ el.innerHTML='<tr><th>SKU</th><th>Item Name</th><th>Category</th><th>Sub Category</th><th>Quantity Available</th><th>Unit</th></tr>'+
+ r.map(x=>`<tr><td>${esc(x.sku)}</td><td>${esc(x.item_name)}</td><td>${esc(x.category_name)}</td><td>${esc(x.sub_category_name||x.subCategory||'')}</td><td>${Number(x.quantity_available||0).toLocaleString('en-IN')}</td><td>${esc(x.unit)}</td></tr>`).join('');
 }
-function addRate(){if(role!=='Admin')return alert('Admin only');const stamp=new Date().toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'});let x={date:rDate.value,sku:rSku.value.trim(),item:rItem.value.trim(),unit:rUnit.value.trim(),category:'',subcat:rSubCat.value.trim(),rate:Number(rRate.value),by:loggedEmail||'admin',timestamp:stamp};if(!x.date||!x.sku||!x.rate)return alert('Enter effective date, SKU and rate');let old=data.rates.filter(a=>a.sku===x.sku&&a.date<=x.date).sort((a,b)=>b.date.localeCompare(a.date))[0];data.rates.push(x);data.audit.push({time:stamp,by:loggedEmail||'admin',action:'Rate Update',sku:x.sku,old:old?.rate,new:x.rate});save();renderAll();alert('Rate updated. This rate will apply to the applicable latest closing date.')}
+function addRate(){if(role!=='Admin')return alert('Admin only');const stamp=new Date().toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'});const prior=latestRateMaster().find(a=>String(a.sku||'').trim().toLowerCase()===String(rSku.value||'').trim().toLowerCase());let x={date:rDate.value,sku:rSku.value.trim(),item:rItem.value.trim()||prior?.item||'',unit:rUnit.value.trim()||prior?.unit||'',category:prior?.category||'',subcat:rSubCat.value.trim()||prior?.subcat||'',rate:Number(rRate.value),by:loggedEmail||'admin',timestamp:stamp};if(!x.date||!x.sku||!x.rate)return alert('Enter effective date, SKU and rate');let old=data.rates.filter(a=>a.sku===x.sku&&a.date<=x.date).sort((a,b)=>b.date.localeCompare(a.date))[0];data.rates.push(x);data.audit.push({time:stamp,by:loggedEmail||'admin',action:'Rate Update',sku:x.sku,old:old?.rate,new:x.rate});save();renderAll();alert('Rate updated. This rate will apply to the applicable latest closing date.')}
 function parseSimpleCSV(text){
  const src=String(text||'').replace(/^\uFEFF/,'');
  const out=[]; let row=[], field='', quoted=false;
@@ -1249,11 +1202,11 @@ function importCountedStockFile(input){
      const countedQty=Number(qtyText);
      const master=rateMasterForItem(itemName);
      if(!itemName||!uom||!category||Number.isNaN(countedQty)||!master){errors.push('Line '+(i+2)+(master?'':' - item not found in Rate Update'));return;}
-     imported.push({date:closingDate,itemNo:master.sku,itemName,uom,category:master.category||category,subCategory:master.subcat||'',countedQty});
+     imported.push({itemNo:master.sku,itemName,uom,category:master.category||category,subCategory:master.subcat||'',countedQty});
    });
-   data.countedStock=remoteArray(data.countedStock).filter(x=>String(x.date||'')!==closingDate).concat(imported);
+   data.countedStock=imported;
    imported.forEach(c=>{
-     const stock=stockForDate(c.itemNo,closingDate);
+     const stock=data.systemStock.find(x=>String(x.sku||'').toLowerCase()===c.itemNo.toLowerCase());
      const systemQty=stock?Number(stock.quantity_available):0;
      const rate=applicableRate(c.itemNo,closingDate,0);
      const idx=data.closings.findIndex(x=>x.date===closingDate && String(x.sku||'').toLowerCase()===c.itemNo.toLowerCase());
@@ -1263,8 +1216,8 @@ function importCountedStockFile(input){
    data.audit.push({time:new Date().toLocaleString(),by:loggedEmail||'admin',action:'Bulk Counted Stock Import'});
    save();renderAll();
    const status=document.getElementById('countedStockImportStatus');
-   if(status)status.innerHTML='<span class="success" style="padding:8px;border-radius:8px;display:inline-block">Imported '+imported.length+' item(s) for closing date '+closingDate+'. '+(errors.length?'Errors: '+errors.length:'')+'</span>';
-   alert('Counted stock imported successfully for '+closingDate+'. Dashboard and Inventory Closing use the matching System Stock snapshot.');
+   if(status)status.innerHTML='<span class="success" style="padding:8px;border-radius:8px;display:inline-block">Imported '+imported.length+' item(s) and updated Inventory Closing for '+closingDate+'. '+(errors.length?'Errors: '+errors.length:'')+'</span>';
+   alert('Counted stock imported successfully. Dashboard and Inventory Closing have been updated for '+closingDate+'.');
   }catch(e){const status=document.getElementById('countedStockImportStatus');if(status)status.textContent='Import failed: '+e.message;alert('Could not import counted stock: '+e.message);}
   input.value='';
  };
@@ -1272,15 +1225,15 @@ function importCountedStockFile(input){
 }
 function exportCountedStock(){
  if(role!=='Admin')return alert('Only Admin can export counted stock.');
- const rows=remoteArray(data.countedStock)||[]; if(!rows.length)return alert('No counted stock available to export.');
- const lines=[['Date','Item Name','UOM','Category','Counted QTY'],...rows.map(r=>[r.date||'',r.itemName,r.uom,r.category,r.countedQty])];
+ const rows=data.countedStock||[]; if(!rows.length)return alert('No counted stock available to export.');
+ const lines=[['Item Name','UOM','Category','Counted QTY'],...rows.map(r=>[r.itemName,r.uom,r.category,r.countedQty])];
  download('counted_stock_export.csv','text/csv;charset=utf-8','\ufeff'+lines.map(r=>r.map(csvEscape).join(',')).join('\r\n'));
  document.getElementById('countedStockImportStatus').textContent='Exported '+rows.length+' counted stock item(s).';
 }
 function renderCountedStockPreview(){
  const body=document.getElementById('countedStockPreviewBody'); if(!body)return;
- const selectedDate=document.getElementById('cDate')?.value||''; const rows=remoteArray(data.countedStock).filter(r=>!selectedDate||String(r.date||'')===selectedDate);
- body.innerHTML=rows.length?rows.map(r=>`<tr><td>${esc(r.itemName)}</td><td>${esc(r.uom)}</td><td>${esc(r.category)}</td><td>${Number(r.countedQty||0).toFixed(3)}</td></tr>`).join(''):'<tr><td colspan="4" class="muted">No counted stock imported for selected date.</td></tr>';
+ const rows=data.countedStock||[];
+ body.innerHTML=rows.length?rows.map(r=>`<tr><td>${esc(r.itemName)}</td><td>${esc(r.uom)}</td><td>${esc(r.category)}</td><td>${Number(r.countedQty||0).toFixed(3)}</td></tr>`).join(''):'<tr><td colspan="4" class="muted">No counted stock imported yet.</td></tr>';
 }
 function updateAutoClosingRate(){
  const sku=(document.getElementById('cSku')?.value||'').trim();
@@ -1289,9 +1242,9 @@ function updateAutoClosingRate(){
  if(!el)return;
  const rate=sku&&date?applicableRate(sku,date,0):0;
  el.value=rate||'';
- const counted=countedForDate(sku,date);
+ const counted=data.countedStock?.find(x=>String(x.itemNo||'').toLowerCase()===sku.toLowerCase());
  if(counted && document.getElementById('cPhysical') && document.getElementById('cPhysical').value==='') document.getElementById('cPhysical').value=counted.countedQty;
- const stock=stockForDate(sku,date);
+ const stock=data.systemStock.find(x=>String(x.sku||'').toLowerCase()===sku.toLowerCase());
  if(stock && document.getElementById('cSystem')) document.getElementById('cSystem').value=Number(stock.quantity_available);
 }
 
@@ -1302,7 +1255,7 @@ document.addEventListener('DOMContentLoaded',()=>{
  normalizeScheduleTypes();
  refreshClosingItemDropdown();
  document.getElementById('cItem')?.addEventListener('change',updateClosingItemFromSelection);
- document.getElementById('cDate')?.addEventListener('change',()=>{updateAutoClosingRate();renderCountedStockPreview();});
+ document.getElementById('cDate')?.addEventListener('change',()=>{updateAutoClosingRate();});
  const sd=document.getElementById('scheduleDate'); if(sd)sd.value='';
  ['loginUser','loginPass'].forEach(id=>document.getElementById(id)?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();login();}}));
 });
