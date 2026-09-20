@@ -581,8 +581,8 @@ function latestRateMaster(){
    const key=sku.toLowerCase();
    const prev=map[key];
    const rd=String(r.date||'');
-   const rt=String(r.timestamp||r.timeStamp||'');
-   if(!prev || rd>String(prev.date||'') || (rd===String(prev.date||'') && rt>String(prev.timestamp||prev.timeStamp||''))) map[key]=r;
+   const rts=Number(r.ts)||0;
+   if(!prev || rd>String(prev.date||'') || (rd===String(prev.date||'') && rts>=(Number(prev.ts)||0))) map[key]=r;
  });
  return Object.values(map);
 }
@@ -658,7 +658,10 @@ function countedForDate(sku,date){
  return remoteArray(data.countedStock).find(x=>String(x.itemNo||'').toLowerCase()===String(sku||'').toLowerCase()&&String(x.date||'')===d)||null;
 }
 function applicableRate(sku,date,fallback){
- let rs=data.rates.filter(r=>r.sku.toLowerCase()===sku.toLowerCase()&&r.date<=date).sort((a,b)=>b.date.localeCompare(a.date));
+ let rs=data.rates.filter(r=>r.sku.toLowerCase()===sku.toLowerCase()&&r.date<=date).sort((a,b)=>{
+   const d=b.date.localeCompare(a.date); if(d!==0)return d;
+   return (Number(b.ts)||0)-(Number(a.ts)||0);
+ });
  return rs.length?Number(rs[0].rate):Number(fallback||0)
 }
 function ensureClosingDocumentNumbers(){
@@ -1139,7 +1142,7 @@ function renderSystemStock(){
  el.innerHTML='<tr><th>Date</th><th>SKU</th><th>Item Name</th><th>Category</th><th>Sub Category</th><th>Quantity Available</th><th>Unit</th></tr>'+
  r.map(x=>`<tr><td>${esc(x.date||'')}</td><td>${esc(x.sku)}</td><td>${esc(x.item_name)}</td><td>${esc(x.category_name)}</td><td>${esc(x.sub_category_name||x.subCategory||'')}</td><td>${Number(x.quantity_available||0).toLocaleString('en-IN')}</td><td>${esc(x.unit)}</td></tr>`).join('');
 }
-function addRate(){if(role!=='Admin')return alert('Admin only');const stamp=new Date().toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'});const skuVal=rSku.value.trim();let old=data.rates.filter(a=>String(a.sku||'').toLowerCase()===skuVal.toLowerCase()&&a.date<=rDate.value).sort((a,b)=>b.date.localeCompare(a.date))[0];if(!old){old=data.rates.filter(a=>String(a.sku||'').toLowerCase()===skuVal.toLowerCase()).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')))[0];}let x={date:rDate.value,sku:skuVal,item:rItem.value.trim()||old?.item||'',unit:rUnit.value.trim()||old?.unit||'',category:old?.category||'',subcat:rSubCat.value.trim()||old?.subcat||'',rate:Number(rRate.value),by:loggedEmail||'admin',timestamp:stamp};if(!x.date||!x.sku||!x.rate)return alert('Enter effective date, SKU and rate');data.rates.push(x);data.audit.push({time:stamp,by:loggedEmail||'admin',action:'Rate Update',sku:x.sku,old:old?.rate,new:x.rate});save();renderAll();alert('Rate updated. This rate will apply to the applicable latest closing date.')}
+function addRate(){if(role!=='Admin')return alert('Admin only');const stamp=new Date().toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'});const skuVal=rSku.value.trim();let old=data.rates.filter(a=>String(a.sku||'').toLowerCase()===skuVal.toLowerCase()&&a.date<=rDate.value).sort((a,b)=>b.date.localeCompare(a.date))[0];if(!old){old=data.rates.filter(a=>String(a.sku||'').toLowerCase()===skuVal.toLowerCase()).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')))[0];}let x={date:rDate.value,sku:skuVal,item:rItem.value.trim()||old?.item||'',unit:rUnit.value.trim()||old?.unit||'',category:old?.category||'',subcat:rSubCat.value.trim()||old?.subcat||'',rate:Number(rRate.value),by:loggedEmail||'admin',timestamp:stamp,ts:Date.now()};if(!x.date||!x.sku||!x.rate)return alert('Enter effective date, SKU and rate');data.rates.push(x);data.audit.push({time:stamp,by:loggedEmail||'admin',action:'Rate Update',sku:x.sku,old:old?.rate,new:x.rate});save();renderAll();alert('Rate updated. This rate will apply to the applicable latest closing date.')}
 function parseSimpleCSV(text){
  const src=String(text||'').replace(/^\uFEFF/,'');
  const out=[]; let row=[], field='', quoted=false;
@@ -1202,6 +1205,7 @@ function importRateCSV(){
    const effectiveDate=document.getElementById('rDate')?.value||'';
    if(!effectiveDate) return alert('Select Effective Date before importing rates.');
    const stamp=new Date().toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'});
+   const batchTs=Date.now();
    const updater=loggedEmail||'admin';
    let added=0,errors=[];
    matrix.slice(1).forEach((r,i)=>{
@@ -1213,7 +1217,7 @@ function importRateCSV(){
     const rate=Number(String(r[ix('cost')]||'').replace(/,/g,'').trim());
     if(!sku||!item||!unit||Number.isNaN(rate)||rate<=0){errors.push('Line '+(i+2));return;}
     // Keep every previous rate; this is a new effective rate.
-    data.rates.push({date:effectiveDate,sku,item,unit,category:cat,subcat,rate,by:updater,timestamp:stamp});
+    data.rates.push({date:effectiveDate,sku,item,unit,category:cat,subcat,rate,by:updater,timestamp:stamp,ts:batchTs});
     added++;
    });
    // One audit entry for the entire bulk upload, regardless of SKU count.
