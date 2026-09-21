@@ -128,6 +128,38 @@ h1{margin:0 0 5px;font-size:25px}.sub{color:#64748b;margin-bottom:20px}.filters{
   z-index: 1;
 }
 </style>
+
+<style id="global-font-minus-2px">
+/* CK Inventory Book - Global UI font reduction: approximately 2px */
+body { font-size: 14px; }
+body, button, input, select, textarea { font-size: calc(1em - 2px); }
+.top-heading h1 { font-size: 23px; }
+.top-heading .top-sub { font-size: 11px; }
+.user { font-size: 11px; }
+.menu button { font-size: 12px; }
+.panel-title { font-size: 14px; }
+.sub { font-size: 12px; }
+.field { font-size: 10px; }
+.field input, .field select { font-size: 12px; }
+.btn { font-size: 12px; }
+.quick button { font-size: 10px; }
+.kpi-title { font-size: 10px; }
+.kpi-value { font-size: 21px; }
+.table { font-size: 11px; }
+.table th, .table td { font-size: 11px; }
+.badge { font-size: 9px; }
+.loginbox h2 { font-size: 22px; }
+.loginbox { font-size: 12px; }
+.loginbox input, .loginbox select { font-size: 12px; }
+.error { font-size: 10px; }
+.chart-legend { font-size: 10px; }
+.mini-table { font-size: 9px; }
+.top-variance-title { font-size: 10px; }
+.top-variance-table { font-size: 8.5px; }
+.top-variance-table th { font-size: 7.5px; }
+#reports .table { font-size: 9px; }
+#reports .table th { font-size: 8px; }
+</style>
 </head>
 <body>
 
@@ -226,7 +258,7 @@ h1{margin:0 0 5px;font-size:25px}.sub{color:#64748b;margin-bottom:20px}.filters{
 
 <div class="card" id="countedStockIOCard" style="margin-top:14px">
   <div class="panel-title">Counted Stock Import / Export</div>
-  <p class="muted">Upload counted stock in this format: Item Name, UOM, Category, Counted QTY. SKU and Sub Category are taken automatically from the Admin Rate Update master.</p>
+  <p class="muted">Upload counted stock in this format: Item Name, UOM, Category, Counted QTY. SKU, Category and Sub Category are taken automatically from the Active Item Master. UOM is retained from the upload.</p>
   <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:12px 0;">
     <button type="button" class="btn" onclick="downloadCountedStockTemplate()">⬇ Download Template</button>
     <label class="btn" style="cursor:pointer;">⬆ Import Counted Stock<input id="countedStockFile" type="file" accept=".csv,text/csv" style="display:none" onchange="importCountedStockFile(this)"></label>
@@ -273,6 +305,27 @@ h1{margin:0 0 5px;font-size:25px}.sub{color:#64748b;margin-bottom:20px}.filters{
 <section id="admin" class="page">
 
 <div class="admin-note">Admin access only. Historical rates are retained and the applicable rate is selected according to closing date.</div>
+<div class="card" style="margin-top:14px" id="activeItemMasterCard">
+<div class="panel-title">Active Item Master</div>
+<div class="sub">Permanent master for Item No, Item Name, Category and Sub Category. Dashboard, Inventory Closing, Variance Report, Item-wise Report, System Stock and Counted Stock use this master for item classification.</div>
+<div class="filters" style="margin-top:12px">
+<div class="field"><label>Item Number / SKU</label><input id="amSku" placeholder="Example: 1637"></div>
+<div class="field"><label>Item Name</label><input id="amItem" placeholder="Example: Eggless sponge cake"></div>
+<div class="field"><label>Category</label><input id="amCategory" placeholder="Example: RM BREADS, ROTIS & PACKAGED FOODS"></div>
+<div class="field"><label>Sub Category</label><input id="amSubCat" placeholder="Example: COGS"></div>
+<button class="btn primary" type="button" onclick="saveActiveItem()">Save / Update Item</button>
+<button class="btn light" type="button" onclick="clearActiveItemForm()">Clear</button>
+</div>
+<div class="filters" style="margin-top:10px">
+<button class="btn light" type="button" onclick="downloadActiveItemTemplate()">⬇ Download Active Item Master Template</button>
+<div class="field"><label>CSV File</label><input type="file" id="activeItemCsv" accept=".csv,text/csv"></div>
+<button class="btn primary" type="button" onclick="importActiveItemCSV()">⬆ Import Active Item Master</button>
+<button class="btn light" type="button" onclick="exportActiveItemMaster()">⬇ Export Active Item Master</button>
+</div>
+<div id="activeItemStatus" style="margin-top:10px"></div>
+<div class="tablewrap" style="margin-top:14px"><table class="table" id="activeItemMasterTable"></table></div>
+</div>
+
 <div class="card">
 <div class="panel-title">Weekly Rate Update</div>
 <div class="filters">
@@ -299,7 +352,7 @@ h1{margin:0 0 5px;font-size:25px}.sub{color:#64748b;margin-bottom:20px}.filters{
 </div>
 <div class="card" style="margin-top:14px">
 <div class="panel-title">Current System Stock Import</div>
-<div class="sub">Admin only. Import your current system stock CSV using the exact columns: item_name, category_name, quantity_available, unit. SKU and Sub Category are taken automatically from the Admin Rate Update master.</div>
+<div class="sub">Admin only. Import your current system stock CSV using the exact columns: item_name, category_name, quantity_available, unit. SKU, Category and Sub Category are taken automatically from the Active Item Master. UOM is retained from the upload.</div>
 <div class="filters">
 <div class="field"><label>Closing Date</label><input type="date" id="systemStockDate"></div>
 <button class="btn light" onclick="downloadSystemStockTemplate()">⬇ Download System Stock Template</button>
@@ -389,7 +442,7 @@ function normalizeRemoteData(d){
   d=d||{};
   d.closings=remoteArray(d.closings); d.rates=remoteArray(d.rates); d.audit=remoteArray(d.audit);
   d.systemStock=remoteArray(d.systemStock); d.countedStock=remoteArray(d.countedStock); d.users=remoteArray(d.users);
-  d.closingSchedule=remoteArray(d.closingSchedule);
+  d.closingSchedule=remoteArray(d.closingSchedule); d.activeItems=remoteArray(d.activeItems);
   return d;
 }
 function remoteSafeData(){
@@ -419,10 +472,11 @@ async function createFirebaseTeamUser(email,password){
 const KEY='inventoryProData';
 const STOCK_RESET_KEY='ckInventoryBookStockReset_v1';
 const CLOSING_RESET_KEY='ckInventoryBookClosingReset_v1';
-let data=normalizeRemoteData(JSON.parse(localStorage.getItem(KEY)||'{"closings":[],"rates":[],"audit":[],"systemStock":[],"countedStock":[],"users":[]}'));
+let data=normalizeRemoteData(JSON.parse(localStorage.getItem(KEY)||'{"closings":[],"rates":[],"audit":[],"systemStock":[],"countedStock":[],"users":[],"activeItems":[]}'));
 if(!Array.isArray(data.systemStock)) data.systemStock=[];
 if(!Array.isArray(data.countedStock)) data.countedStock=[];
 if(!Array.isArray(data.users)) data.users=[];
+if(!Array.isArray(data.activeItems)) data.activeItems=[];
 if(!Array.isArray(data.closingSchedule) || !data.closingSchedule.length) data.closingSchedule=[
   {date:'2026-09-09',time:'',type:'Weekly'},
   {date:'2026-09-15',time:'',type:'Weekly'},
@@ -441,22 +495,13 @@ function save(){
   localStorage.setItem(KEY,JSON.stringify(data));
   if(firebaseUser) saveRemote().catch(e=>console.error('Firebase save failed:',e));
 }
-let loginFailCount=0;
-let loginLockUntil=0;
 async function login(){
  try{
-  const now=Date.now();
-  if(now<loginLockUntil){
-    const secsLeft=Math.ceil((loginLockUntil-now)/1000);
-    const e=document.getElementById('loginError'); if(e)e.textContent=`Too many wrong attempts. Please wait ${secsLeft}s before trying again.`;
-    return false;
-  }
   const u=(document.getElementById('loginUser')?.value||'').trim().toLowerCase();
   const p=(document.getElementById('loginPass')?.value||'').trim();
   if(!u||!p){document.getElementById('loginError').textContent='Enter email and password.';return false;}
   const cred=await firebaseAuth.signInWithEmailAndPassword(u,p);
   firebaseUser=cred.user;
-  loginFailCount=0; loginLockUntil=0;
   await loadRemoteData();
   const isAdmin=u==='zakariya@ristarafoods.com';
   if(isAdmin){ role='Admin'; loggedEmail=u; window.userPermissions=ALL_PERMISSIONS.slice(); }
@@ -471,13 +516,6 @@ async function login(){
   initDates(); updateTopHeader('dashboard'); applyMenuPermissions(); renderAll();
   return true;
  }catch(err){
-  if(err.code==='auth/invalid-credential'||err.code==='auth/wrong-password'||err.code==='auth/user-not-found'){
-    loginFailCount++;
-    if(loginFailCount>=3){
-      const cooldownSec=Math.min(60,10*Math.pow(2,loginFailCount-3));
-      loginLockUntil=Date.now()+cooldownSec*1000;
-    }
-  }
   const e=document.getElementById('loginError'); if(e)e.textContent='Login failed: '+(err.code==='auth/invalid-credential'?'Invalid email or password.':err.message);
   console.error(err); return false;
  }
@@ -573,23 +611,112 @@ function quick(type){
 function normalizeScheduleTypes(){
  (Array.isArray(data.closingSchedule)?data.closingSchedule:[]).forEach(x=>{if(String(x.type||'').toUpperCase()==='MTR')x.type='MTD';});
 }
+function activeItemBySku(sku){
+ const key=String(sku||'').trim().toLowerCase();
+ if(!key)return null;
+ return remoteArray(data.activeItems).find(x=>String(x.sku||'').trim().toLowerCase()===key)||null;
+}
+function activeItemByName(item){
+ const key=String(item||'').trim().toLowerCase();
+ if(!key)return null;
+ return remoteArray(data.activeItems).find(x=>String(x.item||'').trim().toLowerCase()===key)||null;
+}
+function latestRateRecordForSku(sku){
+ const key=String(sku||'').trim().toLowerCase();
+ const list=remoteArray(data.rates).filter(r=>String(r.sku||'').trim().toLowerCase()===key);
+ list.sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||String(b.timestamp||b.timeStamp||'').localeCompare(String(a.timestamp||a.timeStamp||'')));
+ return list[0]||null;
+}
+function masterForSku(sku){
+ const active=activeItemBySku(sku);
+ const rate=latestRateRecordForSku(sku);
+ if(active) return {sku:active.sku,item:active.item,category:active.category,subcat:active.subcat,unit:rate?.unit||'',rate:Number(rate?.rate||0),date:rate?.date||'',timestamp:rate?.timestamp||rate?.timeStamp||''};
+ if(rate) return {sku:rate.sku,item:rate.item||'',category:rate.category||'',subcat:rate.subcat||'',unit:rate.unit||'',rate:Number(rate.rate||0),date:rate.date||'',timestamp:rate.timestamp||rate.timeStamp||''};
+ return null;
+}
+function masterForItem(item){
+ const active=activeItemByName(item);
+ if(active)return masterForSku(active.sku);
+ const typed=String(item||'').trim().toLowerCase();
+ return latestRateMaster().find(r=>String(r.item||'').trim().toLowerCase()===typed)||null;
+}
 function latestRateMaster(){
  const map={};
- (Array.isArray(data.rates)?data.rates:[]).forEach(r=>{
-   const sku=String(r.sku||'').trim();
-   if(!sku)return;
-   const key=sku.toLowerCase();
-   const prev=map[key];
-   const rd=String(r.date||'');
-   const rts=Number(r.ts)||0;
-   if(!prev || rd>String(prev.date||'') || (rd===String(prev.date||'') && rts>=(Number(prev.ts)||0))) map[key]=r;
+ // Active Item Master is the permanent source for SKU, Item Name, Category and Sub Category.
+ remoteArray(data.activeItems).forEach(m=>{
+   const sku=String(m.sku||'').trim(); if(!sku)return;
+   const r=latestRateRecordForSku(sku);
+   map[sku.toLowerCase()]={sku,item:m.item||'',category:m.category||'',subcat:m.subcat||'',unit:r?.unit||'',rate:Number(r?.rate||0),date:r?.date||'',timestamp:r?.timestamp||r?.timeStamp||''};
  });
  return Object.values(map);
+}
+function saveActiveItem(){
+ if(role!=='Admin')return alert('Admin only');
+ const sku=String(document.getElementById('amSku')?.value||'').trim();
+ const item=String(document.getElementById('amItem')?.value||'').trim();
+ const category=String(document.getElementById('amCategory')?.value||'').trim();
+ const subcat=String(document.getElementById('amSubCat')?.value||'').trim();
+ if(!sku||!item||!category||!subcat)return alert('Enter Item Number, Item Name, Category and Sub Category.');
+ const existing=remoteArray(data.activeItems).find(x=>String(x.sku||'').trim().toLowerCase()===sku.toLowerCase());
+ if(existing){existing.sku=sku;existing.item=item;existing.category=category;existing.subcat=subcat;}
+ else data.activeItems.push({sku,item,category,subcat});
+ data.audit.push({time:new Date().toLocaleString('en-IN'),by:loggedEmail||'admin',action:'Active Item Master Updated'});
+ save();renderAll();clearActiveItemForm();
+ const st=document.getElementById('activeItemStatus');if(st)st.innerHTML='<span class="success">Active Item Master saved. All reports will use this classification for SKU '+esc(sku)+'.</span>';
+}
+function clearActiveItemForm(){['amSku','amItem','amCategory','amSubCat'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});}
+function downloadActiveItemTemplate(){
+ const rows=[['Item Number','Item Name','Category','Sub Category'],['1637','Eggless sponge cake','RM BREADS, ROTIS & PACKAGED FOODS','COGS']];
+ download('active_item_master_template.csv','text/csv;charset=utf-8','\ufeff'+rows.map(r=>r.map(csvEscape).join(',')).join('\r\n'));
+}
+function importActiveItemCSV(){
+ if(role!=='Admin')return alert('Only Admin can import Active Item Master.');
+ const file=document.getElementById('activeItemCsv')?.files?.[0];if(!file)return alert('Please select the Active Item Master CSV file.');
+ const reader=new FileReader();reader.onload=()=>{
+  try{
+   const matrix=parseSimpleCSV(String(reader.result||''));if(matrix.length<2)throw new Error('CSV has no item data.');
+   const headers=matrix[0].map(x=>String(x).trim().toLowerCase());
+   const required=['item number','item name','category','sub category'];
+   const missing=required.filter(x=>!headers.includes(x));if(missing.length)throw new Error('Missing required columns: '+missing.join(', '));
+   const ix=x=>headers.indexOf(x);let imported=0,errors=[];
+   matrix.slice(1).filter(r=>r.some(v=>String(v||'').trim()!=='')).forEach((r,i)=>{
+    const sku=String(r[ix('item number')]||'').trim(),item=String(r[ix('item name')]||'').trim(),category=String(r[ix('category')]||'').trim(),subcat=String(r[ix('sub category')]||'').trim();
+    if(!sku||!item||!category||!subcat){errors.push('Line '+(i+2));return;}
+    const old=remoteArray(data.activeItems).find(x=>String(x.sku||'').trim().toLowerCase()===sku.toLowerCase());
+    if(old){old.sku=sku;old.item=item;old.category=category;old.subcat=subcat;}else data.activeItems.push({sku,item,category,subcat});
+    imported++;
+   });
+   data.audit.push({time:new Date().toLocaleString('en-IN'),by:loggedEmail||'admin',action:'Bulk Active Item Master Import'});
+   save();renderAll();document.getElementById('activeItemCsv').value='';
+   document.getElementById('activeItemStatus').innerHTML='<span class="success">Imported/updated '+imported+' Active Item Master item(s).'+(errors.length?' Errors: '+errors.length:'')+'</span>';
+   alert('Active Item Master updated. Dashboard and reports will now use this master.');
+  }catch(e){document.getElementById('activeItemStatus').textContent='Import failed: '+e.message;alert('Could not import Active Item Master: '+e.message);}
+ };reader.readAsText(file);
+}
+function exportActiveItemMaster(){
+ if(role!=='Admin')return alert('Only Admin can export Active Item Master.');
+ const rows=remoteArray(data.activeItems).sort((a,b)=>String(a.sku).localeCompare(String(b.sku)));
+ if(!rows.length)return alert('No Active Item Master records available.');
+ const lines=[['Item Number','Item Name','Category','Sub Category'],...rows.map(x=>[x.sku,x.item,x.category,x.subcat])];
+ download('active_item_master.csv','text/csv;charset=utf-8','\ufeff'+lines.map(r=>r.map(csvEscape).join(',')).join('\r\n'));
+}
+function renderActiveItemMaster(){
+ const el=document.getElementById('activeItemMasterTable');if(!el)return;
+ const list=remoteArray(data.activeItems).slice().sort((a,b)=>String(a.sku).localeCompare(String(b.sku)));
+ el.innerHTML='<tr><th>Item Number</th><th>Item Name</th><th>Category</th><th>Sub Category</th><th>Action</th></tr>'+list.map((x,i)=>`<tr><td>${esc(x.sku)}</td><td>${esc(x.item)}</td><td>${esc(x.category)}</td><td>${esc(x.subcat)}</td><td><button class="btn light" type="button" onclick="editActiveItem(${i})">Edit</button> <button class="btn light" type="button" onclick="deleteActiveItem(${i})">Delete</button></td></tr>`).join('')+(list.length?'':'<tr><td colspan="5" class="muted">No active items added yet.</td></tr>');
+}
+function editActiveItem(index){const list=remoteArray(data.activeItems).slice().sort((a,b)=>String(a.sku).localeCompare(String(b.sku)));const x=list[index];if(!x)return;document.getElementById('amSku').value=x.sku||'';document.getElementById('amItem').value=x.item||'';document.getElementById('amCategory').value=x.category||'';document.getElementById('amSubCat').value=x.subcat||'';}
+async function deleteActiveItem(index){
+ if(role!=='Admin')return alert('Admin only');
+ const list=remoteArray(data.activeItems).slice().sort((a,b)=>String(a.sku).localeCompare(String(b.sku)));const x=list[index];if(!x)return;
+ if(!confirm('Remove '+(x.item||x.sku)+' from the Active Item Master? Existing historical closing records will remain, but future item selection will no longer use this master.'))return;
+ const real=remoteArray(data.activeItems).findIndex(y=>String(y.sku||'').toLowerCase()===String(x.sku||'').toLowerCase());if(real>=0)data.activeItems.splice(real,1);
+ data.audit.push({time:new Date().toLocaleString('en-IN'),by:loggedEmail||'admin',action:'Active Item Master Item Removed'});save();renderAll();
 }
 function refreshClosingItemDropdown(){
  const el=document.getElementById('cItem'), listEl=document.getElementById('closingItemList'); if(!el||!listEl)return;
  const current=String(el.value||'').trim();
- const list=latestRateMaster().sort((a,b)=>String(a.item||'').localeCompare(String(b.item||''))||String(a.sku||'').localeCompare(String(b.sku||'')));
+ const list=remoteArray(data.activeItems).length?remoteArray(data.activeItems).map(m=>({...m,unit:latestRateRecordForSku(m.sku)?.unit||'',rate:Number(latestRateRecordForSku(m.sku)?.rate||0),date:latestRateRecordForSku(m.sku)?.date||''})):latestRateMaster().sort((a,b)=>String(a.item||'').localeCompare(String(b.item||''))||String(a.sku||'').localeCompare(String(b.sku||'')));
  listEl.innerHTML=list.map(r=>`<option value="${esc(String(r.item||r.sku||''))}"></option>`).join('');
  if(current) el.value=current;
  updateClosingItemFromSelection();
@@ -598,7 +725,7 @@ function updateClosingItemFromSelection(){
  const itemEl=document.getElementById('cItem'), skuEl=document.getElementById('cSku'), catEl=document.getElementById('cCat');
  if(!itemEl)return;
  const typed=String(itemEl.value||'').trim();
- const list=latestRateMaster();
+ const list=remoteArray(data.activeItems).length?remoteArray(data.activeItems).map(m=>({...m,unit:latestRateRecordForSku(m.sku)?.unit||'',rate:Number(latestRateRecordForSku(m.sku)?.rate||0),date:latestRateRecordForSku(m.sku)?.date||''})):latestRateMaster();
  let rec=list.find(r=>String(r.item||'').toLowerCase()===typed.toLowerCase());
  // While typing, automatically use the only matching item when the text uniquely identifies it.
  if(!rec && typed){
@@ -608,6 +735,7 @@ function updateClosingItemFromSelection(){
  if(rec){
    if(skuEl)skuEl.value=rec.sku||'';
    if(catEl)catEl.value=rec.category||'';
+   const subEl=document.getElementById('cSubCat'); if(subEl)subEl.value=rec.subcat||'';
    const stock=stockForDate(rec.sku,document.getElementById('cDate')?.value||'');
    const sys=document.getElementById('cSystem');
    if(sys)sys.value=stock?Number(stock.quantity_available):'';
@@ -617,6 +745,7 @@ function updateClosingItemFromSelection(){
  }else{
    if(skuEl)skuEl.value='';
    if(catEl)catEl.value='';
+   const subEl=document.getElementById('cSubCat'); if(subEl)subEl.value='';
    const sys=document.getElementById('cSystem'); if(sys)sys.value='';
    const rate=document.getElementById('cRate'); if(rate)rate.value='';
  }
@@ -624,7 +753,7 @@ function updateClosingItemFromSelection(){
 }
 function refreshRateItemDropdown(){
  const el=document.getElementById('rItem'), listEl=document.getElementById('rateItemList'); if(!el||!listEl)return;
- const list=latestRateMaster().sort((a,b)=>String(a.item||'').localeCompare(String(b.item||''))||String(a.sku||'').localeCompare(String(b.sku||'')));
+ const list=remoteArray(data.activeItems).length?remoteArray(data.activeItems).map(m=>({...m,unit:latestRateRecordForSku(m.sku)?.unit||'',rate:Number(latestRateRecordForSku(m.sku)?.rate||0),date:latestRateRecordForSku(m.sku)?.date||''})):latestRateMaster().sort((a,b)=>String(a.item||'').localeCompare(String(b.item||''))||String(a.sku||'').localeCompare(String(b.sku||'')));
  listEl.innerHTML=list.map(r=>`<option value="${esc(String(r.item||r.sku||''))}"></option>`).join('');
  updateRateItemFromSelection();
 }
@@ -632,7 +761,7 @@ function updateRateItemFromSelection(){
  const itemEl=document.getElementById('rItem'), skuEl=document.getElementById('rSku'), subEl=document.getElementById('rSubCat');
  if(!itemEl)return;
  const typed=String(itemEl.value||'').trim();
- const list=latestRateMaster();
+ const list=remoteArray(data.activeItems).length?remoteArray(data.activeItems).map(m=>({...m,unit:latestRateRecordForSku(m.sku)?.unit||'',rate:Number(latestRateRecordForSku(m.sku)?.rate||0),date:latestRateRecordForSku(m.sku)?.date||''})):latestRateMaster();
  let rec=list.find(r=>String(r.item||'').toLowerCase()===typed.toLowerCase());
  if(!rec && typed){
    const matches=list.filter(r=>String(r.item||'').toLowerCase().startsWith(typed.toLowerCase()));
@@ -658,10 +787,7 @@ function countedForDate(sku,date){
  return remoteArray(data.countedStock).find(x=>String(x.itemNo||'').toLowerCase()===String(sku||'').toLowerCase()&&String(x.date||'')===d)||null;
 }
 function applicableRate(sku,date,fallback){
- let rs=data.rates.filter(r=>r.sku.toLowerCase()===sku.toLowerCase()&&r.date<=date).sort((a,b)=>{
-   const d=b.date.localeCompare(a.date); if(d!==0)return d;
-   return (Number(b.ts)||0)-(Number(a.ts)||0);
- });
+ let rs=data.rates.filter(r=>r.sku.toLowerCase()===sku.toLowerCase()&&r.date<=date).sort((a,b)=>b.date.localeCompare(a.date));
  return rs.length?Number(rs[0].rate):Number(fallback||0)
 }
 function ensureClosingDocumentNumbers(){
@@ -687,32 +813,15 @@ function nextClosingDocumentNumber(date){
  let no; do{no='CKC-'+d+'-'+String(n++).padStart(3,'0')}while(existing.has(no));
  return no;
 }
-let adminCheckFailCount=0;
-let adminCheckLockUntil=0;
 async function adminPasswordCheck(action){
- const now=Date.now();
- if(now<adminCheckLockUntil){
-   const secsLeft=Math.ceil((adminCheckLockUntil-now)/1000);
-   alert(`Too many wrong admin password attempts. Please wait ${secsLeft}s before trying again.`);
-   return false;
- }
  const password=prompt('Admin password required to '+action+':');
  if(password===null)return false;
  if(role!=='Admin'||!firebaseUser||String(firebaseUser.email||'').toLowerCase()!=='zakariya@ristarafoods.com'){alert('Admin authentication is required.');return false;}
  try{
    const cred=firebase.auth.EmailAuthProvider.credential(firebaseUser.email,password);
    await firebaseUser.reauthenticateWithCredential(cred);
-   adminCheckFailCount=0; adminCheckLockUntil=0;
    return true;
- }catch(e){
-   adminCheckFailCount++;
-   if(adminCheckFailCount>=3){
-     const cooldownSec=Math.min(60,10*Math.pow(2,adminCheckFailCount-3));
-     adminCheckLockUntil=Date.now()+cooldownSec*1000;
-   }
-   alert('Incorrect Admin password.');
-   return false;
- }
+ }catch(e){alert('Incorrect Admin password.');return false;}
 }
 
 function refreshSubCategoryFilter(){
@@ -720,19 +829,13 @@ function refreshSubCategoryFilter(){
  if(!el)return;
  const current=String(el.value||'').trim();
  const vals=new Set();
- (Array.isArray(data.closings)?data.closings:[]).forEach(x=>{
-  const v=String(x.subcat??x.subCategory??'').trim();
-  if(v)vals.add(v);
- });
- (Array.isArray(data.countedStock)?data.countedStock:[]).forEach(x=>{
-  const v=String(x.subCategory??x.subcat??'').trim();
-  if(v)vals.add(v);
- });
+ rows().forEach(x=>{const v=String(x.subcat||x.subCategory||'').trim();if(v)vals.add(v);});
+ remoteArray(data.activeItems).forEach(x=>{const v=String(x.subcat||'').trim();if(v)vals.add(v);});
  const list=[...vals].sort((a,b)=>a.localeCompare(b));
  el.innerHTML='<option value="">All Sub Categories</option>'+list.map(v=>'<option value="'+esc(v)+'">'+esc(v)+'</option>').join('');
  if(list.includes(current))el.value=current;
 }
-function rows(){return (Array.isArray(data.closings)?data.closings:[]).map(x=>{let rate=Number.isFinite(Number(x.rate))&&Number(x.rate)>0?Number(x.rate):applicableRate(x.sku,x.date,0),v=Number.isFinite(Number(x.importedVariance))?Number(x.importedVariance):(Number(x.physical||0)-Number(x.system||0));return {...x,rate,qty:v,varQty:v,value:v*rate,type:v<0?'SHORT':v>0?'EXCESS':'MATCHED'}})}
+function rows(){return (Array.isArray(data.closings)?data.closings:[]).map(x=>{const master=masterForSku(x.sku)||{};let rate=Number.isFinite(Number(x.rate))&&Number(x.rate)>0?Number(x.rate):applicableRate(x.sku,x.date,0),v=Number.isFinite(Number(x.importedVariance))?Number(x.importedVariance):(Number(x.physical||0)-Number(x.system||0));return {...x,item:master.item||x.item||'',uom:master.unit||x.uom||'',cat:master.category||x.cat||'',subcat:master.subcat||x.subcat||x.subCategory||'',rate,qty:v,varQty:v,value:v*rate,type:v<0?'SHORT':v>0?'EXCESS':'MATCHED'}})}
 function renderAll(){
  ensureClosingDocumentNumbers();
  normalizeScheduleTypes();
@@ -745,6 +848,7 @@ function renderAll(){
  renderReports();
  renderItems();
  renderRates();
+ renderActiveItemMaster();
  renderAudit();
  renderSystemStock();
  renderCountedStockPreview();
@@ -845,19 +949,21 @@ function renderClosing(){
  }).join('');
  document.getElementById('closingTable').innerHTML=head+(body||'<tr><td colspan="11" style="text-align:center;color:#94a3b8">No closing entries</td></tr>');
 }
-async function deleteClosingLine(index){
+function deleteClosingLine(index){
  if(role!=='Admin' && !hasAccess('editClosing'))return alert('Edit Closing Qty access is not assigned to your email. Please contact Admin.');
  if(!Number.isInteger(index)||index<0||index>=data.closings.length)return;
  const x=data.closings[index];
  if(!confirm(`Delete closing entry for ${x.item||x.sku} on ${x.date}?`))return;
- if(!(await adminPasswordCheck('delete this closing entry')))return;
+ if(!adminPasswordCheck('delete this closing entry'))return;
  data.closings.splice(index,1);
  data.audit.push({time:new Date().toLocaleString(),by:loggedEmail||'admin',action:'Closing Entry Deleted'});
  save();renderAll();
 }
-async function editClosingQty(date,sku){
+function editClosingQty(date,sku){
  if(role!=='Admin' && !hasAccess('editClosing'))return alert('Edit Closing Qty access is not assigned to your email. Please contact Admin.');
- if(!(await adminPasswordCheck('edit System / Physical Qty')))return;
+ const password=prompt('Admin password required to edit System / Physical Qty:');
+ if(password===null)return;
+ if(password!=='admin123')return alert('Incorrect Admin password.');
  const idx=data.closings.findIndex(x=>String(x.date||'')===String(date||'')&&String(x.sku||'').toLowerCase()===String(sku||'').toLowerCase());
  if(idx<0)return alert('Closing record not found.');
  const rec=data.closings[idx];
@@ -1072,7 +1178,7 @@ function addClosing(){
  if(role!=='Admin')return alert('Admin only');
  const sku=String(document.getElementById('cSku')?.value||'').trim();
  const itemInput=document.getElementById('cItem');
- const itemRec=latestRateMaster().find(x=>String(x.sku||'').toLowerCase()===sku.toLowerCase());
+ const itemRec=masterForSku(sku);
  const closingDate=document.getElementById('cDate')?.value||'';
  const stock=stockForDate(sku,closingDate);
  const counted=countedForDate(sku,closingDate);
@@ -1120,8 +1226,8 @@ function importSystemStockCSV(){
    data.systemStock=remoteArray(data.systemStock).filter(x=>String(x.date||'')!==closingDate);
    matrix.slice(1).forEach((r,i)=>{
     const line=i+2,item=(r[ix('item_name')]||'').trim(),category=(r[ix('category_name')]||'').trim(),qty=Number(String(r[ix('quantity_available')]||'').replace(/,/g,'')),unit=(r[ix('unit')]||'').trim();
-    const master=rateMasterForItem(item);
-    if(!item||!category||!unit||Number.isNaN(qty)||!master){errors.push('Line '+line+(master?'':' - item not found in Rate Update'));return;}
+    const master=masterForItem(item);
+    if(!item||!category||!unit||Number.isNaN(qty)||!master){errors.push('Line '+line+(master?'':' - item not found in Active Item Master'));return;}
     const sku=master.sku,subCategory=master.subcat||'';
     data.systemStock.push({date:closingDate,sku,item_name:item,category_name:master.category||category,sub_category_name:subCategory,quantity_available:qty,unit});
     added++;
@@ -1142,7 +1248,7 @@ function renderSystemStock(){
  el.innerHTML='<tr><th>Date</th><th>SKU</th><th>Item Name</th><th>Category</th><th>Sub Category</th><th>Quantity Available</th><th>Unit</th></tr>'+
  r.map(x=>`<tr><td>${esc(x.date||'')}</td><td>${esc(x.sku)}</td><td>${esc(x.item_name)}</td><td>${esc(x.category_name)}</td><td>${esc(x.sub_category_name||x.subCategory||'')}</td><td>${Number(x.quantity_available||0).toLocaleString('en-IN')}</td><td>${esc(x.unit)}</td></tr>`).join('');
 }
-function addRate(){if(role!=='Admin')return alert('Admin only');const stamp=new Date().toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'});const skuVal=rSku.value.trim();let old=latestRateMaster().find(a=>String(a.sku||'').toLowerCase()===skuVal.toLowerCase());let x={date:rDate.value,sku:skuVal,item:rItem.value.trim()||old?.item||'',unit:rUnit.value.trim()||old?.unit||'',category:old?.category||'',subcat:rSubCat.value.trim()||old?.subcat||'',rate:Number(rRate.value),by:loggedEmail||'admin',timestamp:stamp,ts:Date.now()};if(!x.date||!x.sku||!x.rate)return alert('Enter effective date, SKU and rate');data.rates.push(x);data.audit.push({time:stamp,by:loggedEmail||'admin',action:'Rate Update',sku:x.sku,old:old?.rate,new:x.rate});save();renderAll();alert('Rate updated. This rate will apply to the applicable latest closing date.')}
+function addRate(){if(role!=='Admin')return alert('Admin only');const stamp=new Date().toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'});const master=masterForSku(String(rSku.value||'').trim())||masterForItem(String(rItem.value||'').trim());const sku=String(master?.sku||rSku.value||'').trim();if(!master||!sku)return alert('Select an item from Active Item Master first.');let x={date:rDate.value,sku,item:master.item||rItem.value.trim(),unit:master.unit||rUnit.value.trim(),category:master.category||'',subcat:master.subcat||'',rate:Number(rRate.value),by:loggedEmail||'admin',timestamp:stamp};if(!x.date||!x.sku||!x.rate)return alert('Enter effective date and rate');let old=data.rates.filter(a=>String(a.sku||'').toLowerCase()===x.sku.toLowerCase()&&a.date<=x.date).sort((a,b)=>b.date.localeCompare(a.date))[0];data.rates.push(x);data.audit.push({time:stamp,by:loggedEmail||'admin',action:'Rate Update',sku:x.sku,old:old?.rate,new:x.rate});save();renderAll();alert('Rate updated. Item classification comes from Active Item Master; this rate will apply by closing date.')}
 function parseSimpleCSV(text){
  const src=String(text||'').replace(/^\uFEFF/,'');
  const out=[]; let row=[], field='', quoted=false;
@@ -1205,7 +1311,6 @@ function importRateCSV(){
    const effectiveDate=document.getElementById('rDate')?.value||'';
    if(!effectiveDate) return alert('Select Effective Date before importing rates.');
    const stamp=new Date().toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'});
-   const batchTs=Date.now();
    const updater=loggedEmail||'admin';
    let added=0,errors=[];
    matrix.slice(1).forEach((r,i)=>{
@@ -1217,7 +1322,7 @@ function importRateCSV(){
     const rate=Number(String(r[ix('cost')]||'').replace(/,/g,'').trim());
     if(!sku||!item||!unit||Number.isNaN(rate)||rate<=0){errors.push('Line '+(i+2));return;}
     // Keep every previous rate; this is a new effective rate.
-    data.rates.push({date:effectiveDate,sku,item,unit,category:cat,subcat,rate,by:updater,timestamp:stamp,ts:batchTs});
+    data.rates.push({date:effectiveDate,sku,item,unit,category:cat,subcat,rate,by:updater,timestamp:stamp});
     added++;
    });
    // One audit entry for the entire bulk upload, regardless of SKU count.
@@ -1250,11 +1355,7 @@ function exportCurrentRates(){
 }
 
 /* ===== Counted Stock ===== */
-function rateMasterForItem(itemName){
- const typed=String(itemName||'').trim().toLowerCase();
- const list=latestRateMaster();
- return list.find(r=>String(r.item||'').trim().toLowerCase()===typed)||null;
-}
+function rateMasterForItem(itemName){ return masterForItem(itemName); }
 function downloadCountedStockTemplate(){
  const rows=[['Item Name','UOM','Category','Counted QTY'],['Rice','KG','Raw Material','0']];
  download('counted_stock_template.csv','text/csv;charset=utf-8','\ufeff'+rows.map(r=>r.map(csvEscape).join(',')).join('\r\n'));
@@ -1282,9 +1383,9 @@ function importCountedStockFile(input){
      const category=String(r[ix('category')]||'').trim();
      const qtyText=String(r[ix('counted qty')]??'').replace(/,/g,'').trim();
      const countedQty=Number(qtyText);
-     const master=rateMasterForItem(itemName);
-     if(!itemName||!uom||!category||Number.isNaN(countedQty)||!master){errors.push('Line '+(i+2)+(master?'':' - item not found in Rate Update'));return;}
-     imported.push({date:closingDate,itemNo:master.sku,itemName,uom,category:master.category||category,subCategory:master.subcat||'',countedQty});
+     const master=masterForItem(itemName);
+     if(!itemName||!uom||!category||Number.isNaN(countedQty)||!master){errors.push('Line '+(i+2)+(master?'':' - item not found in Active Item Master'));return;}
+     imported.push({date:closingDate,itemNo:master.sku,itemName:master.item||itemName,uom,category:master.category||'',subCategory:master.subcat||'',countedQty});
    });
    data.countedStock=remoteArray(data.countedStock).filter(x=>String(x.date||'')!==closingDate).concat(imported);
    imported.forEach(c=>{
