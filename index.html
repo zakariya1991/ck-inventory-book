@@ -930,7 +930,7 @@ function renderDash(){
  const qtyFmt=n=>Number(n||0).toLocaleString('en-IN',{maximumFractionDigits:2});
  const shortTop=[...r].filter(x=>x.type==='SHORT').sort((a,b)=>Math.abs(Number(b.qty||0))-Math.abs(Number(a.qty||0)) || Math.abs(b.value)-Math.abs(a.value)).slice(0,15);
  const excessTop=[...r].filter(x=>x.type==='EXCESS').sort((a,b)=>Math.abs(Number(b.qty||0))-Math.abs(Number(a.qty||0)) || Math.abs(b.value)-Math.abs(a.value)).slice(0,15);
- const topHead='<tr><th>Item Name</th><th>System Qty</th><th>Manual Qty</th><th>Variance Cost</th></tr>';
+ const topHead='<tr><th>Item Name</th><th>System Qty</th><th>Diff. Qty</th><th>Variance Cost</th></tr>';
  const topRow=x=>`<tr><td title="${esc(x.item)}">${esc(x.item)}</td><td>${qtyFmt(x.system)}</td><td>${qtyFmt(x.qty)}</td><td>${money(Math.abs(Number(x.qty||0)*Number(x.rate||0)))}</td></tr>`;
  document.getElementById('shortTopTable').innerHTML=topHead+(shortTop.length?shortTop.map(topRow).join(''):'<tr><td colspan="4" style="text-align:center;color:#94a3b8">No SHORT items</td></tr>');
  document.getElementById('excessTopTable').innerHTML=topHead+(excessTop.length?excessTop.map(topRow).join(''):'<tr><td colspan="4" style="text-align:center;color:#94a3b8">No EXCESS items</td></tr>');
