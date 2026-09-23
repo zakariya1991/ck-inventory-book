@@ -363,6 +363,14 @@ body, button, input, select, textarea { font-size: calc(1em - 2px); }
 <div class="tablewrap" style="margin-top:14px"><table class="table" id="systemStockTable"></table></div>
 </div>
 
+<div class="card" style="margin-top:14px;border-left:4px solid #ef4444">
+<div class="panel-title">Inventory Closing Data Management</div>
+<div class="sub">Clear Inventory Closing entries and imported Counted Stock when starting a fresh physical-count cycle. System Stock, Rates, Active Item Master, Users and Closing Schedule are not deleted.</div>
+<div style="margin-top:12px">
+<button class="btn danger" type="button" onclick="clearInventoryClosingData()">🗑 Clear All Inventory Closing + Counted Stock</button>
+</div>
+</div>
+
 <div class="card" style="margin-top:14px" id="userAccessCard">
   <div class="panel-title">Team Access Management</div>
   <div class="sub">Create email-wise access before giving the team member login access. Admin always has full access.</div>
@@ -443,6 +451,7 @@ function normalizeRemoteData(d){
   d.closings=remoteArray(d.closings); d.rates=remoteArray(d.rates); d.audit=remoteArray(d.audit);
   d.systemStock=remoteArray(d.systemStock); d.countedStock=remoteArray(d.countedStock); d.users=remoteArray(d.users);
   d.closingSchedule=remoteArray(d.closingSchedule); d.activeItems=remoteArray(d.activeItems);
+  d.maintenance=d.maintenance||{};
   return d;
 }
 function remoteSafeData(){
@@ -458,6 +467,19 @@ async function loadRemoteData(){
   const snap=await firebaseDb.ref('appData').once('value');
   if(snap.exists()){ data=normalizeRemoteData(snap.val()); }
   else { data=normalizeRemoteData(data); await firebaseDb.ref('appData').set(remoteSafeData()); }
+
+  // ONE-TIME CLEAN START for the current Inventory Closing reset.
+  // Deletes all Inventory Closing entries and imported Counted Stock from Firebase.
+  // System Stock, Rates, Active Item Master, Users and Closing Schedule are preserved.
+  if(data.maintenance.inventoryClosingResetV2!==true){
+    data.closings=[];
+    data.countedStock=[];
+    data.maintenance.inventoryClosingResetV2=true;
+    data.audit=remoteArray(data.audit);
+    data.audit.push({time:new Date().toLocaleString(),by:'system',action:'Inventory Closing and Counted Stock reset for clean start'});
+    localStorage.setItem(KEY,JSON.stringify(data));
+    await firebaseDb.ref('appData').set(remoteSafeData());
+  }
   firebaseDataLoaded=true;
 }
 function getSecondaryAuth(){
@@ -835,8 +857,21 @@ function refreshSubCategoryFilter(){
  el.innerHTML='<option value="">All Sub Categories</option>'+list.map(v=>'<option value="'+esc(v)+'">'+esc(v)+'</option>').join('');
  if(list.includes(current))el.value=current;
 }
-function rows(){return (Array.isArray(data.closings)?data.closings:[]).map(x=>{const master=masterForSku(x.sku)||{};let rate=Number.isFinite(Number(x.rate))&&Number(x.rate)>0?Number(x.rate):applicableRate(x.sku,x.date,0),v=Number.isFinite(Number(x.importedVariance))?Number(x.importedVariance):(Number(x.physical||0)-Number(x.system||0));return {...x,item:master.item||x.item||'',uom:master.unit||x.uom||'',cat:master.category||x.cat||'',subcat:master.subcat||x.subcat||x.subCategory||'',rate,qty:v,varQty:v,value:v*rate,type:v<0?'SHORT':v>0?'EXCESS':'MATCHED'}})}
+function rows(){
+ return (Array.isArray(data.closings)?data.closings:[]).map(x=>{
+  const master=masterForSku(x.sku)||{};
+  const rate=Number.isFinite(Number(x.rate))&&Number(x.rate)>0?Number(x.rate):applicableRate(x.sku,x.date,0);
+  // Counted QTY is the actual physical quantity counted. Older imported records
+  // stored it in importedVariance and incorrectly added it to System Qty.
+  // Use that stored counted quantity as Physical Qty for backward compatibility.
+  const system=Number(x.system||0);
+  const physical=Number.isFinite(Number(x.importedVariance))?Number(x.importedVariance):Number(x.physical||0);
+  const v=physical-system;
+  return {...x,system,physical,item:master.item||x.item||'',uom:master.unit||x.uom||'',cat:master.category||x.cat||'',subcat:master.subcat||x.subcat||x.subCategory||'',rate,qty:v,varQty:v,value:v*rate,type:v<0?'SHORT':v>0?'EXCESS':'MATCHED'};
+ });
+}
 function renderAll(){
+ if(normalizeLegacyCountedClosingRecords()) save();
  ensureClosingDocumentNumbers();
  normalizeScheduleTypes();
  refreshClosingItemDropdown();
@@ -938,6 +973,23 @@ function renderDash(){
  document.getElementById('dateTable').innerHTML='<tr><th>Closing Date</th><th>System Value</th><th>Physical Value</th><th>Short Value</th><th>Excess Value</th><th>Net Variance</th></tr>'+
    dt.map(q=>{let a=r.filter(x=>x.date===q.d);return `<tr><td>${q.d}</td><td>${money(a.reduce((z,x)=>z+x.system*x.rate,0))}</td><td>${money(a.reduce((z,x)=>z+x.physical*x.rate,0))}</td><td class="short">${money(q.s)}</td><td class="excess">${money(q.e)}</td><td>${money(q.n)}</td></tr>`}).join('');
 }
+function normalizeLegacyCountedClosingRecords(){
+ const closings=Array.isArray(data.closings)?data.closings:[];
+ let changed=false;
+ closings.forEach(x=>{
+   if(x && x.importedVariance!=null){
+     const counted=Number(x.importedVariance);
+     if(Number.isFinite(counted)){
+       x.physical=counted;
+       changed=true;
+     }
+     delete x.importedVariance;
+     changed=true;
+   }
+ });
+ return changed;
+}
+
 function renderClosing(){
  let r=rows();
  const head='<tr><th>Document No.</th><th>Date</th><th>SKU</th><th>Item</th><th>System</th><th>Physical</th><th>Var Qty</th><th>Rate</th><th>Value</th><th>Status</th><th>Action</th></tr>';
@@ -945,7 +997,7 @@ function renderClosing(){
  const source=Array.isArray(data.closings)?data.closings:[];
  const body=r.slice().reverse().map((x,revIndex)=>{
    const dataIndex=source.length-1-revIndex;
-   return `<tr><td>${esc(x.docNo||'-')}</td><td>${x.date||'-'}</td><td>${esc(x.sku)}</td><td>${esc(x.item)}</td><td>${Number(x.system||0).toFixed(3)}</td><td>${Number(x.physical||0).toFixed(3)}</td><td>${Number(x.varQty||0).toFixed(3)}</td><td>${money(x.rate)}</td><td>${money(x.value)}</td><td><span class="badge ${x.type==='SHORT'?'bshort':x.type==='EXCESS'?'bexcess':'bmatch'}">${x.type}</span></td><td>${canEdit?`<button class="btn light small-btn" onclick="editClosingQty('${esc(x.date)}','${esc(x.sku)}')">Edit Qty</button> <button class="btn danger small-btn" onclick="deleteClosingLine(${dataIndex})">Delete</button>`:'—'}</td></tr>`;
+   return `<tr><td>${esc(x.docNo||'-')}</td><td>${x.date||'-'}</td><td>${esc(x.sku)}</td><td>${esc(x.item)}</td><td>${Number(x.system||0).toFixed(3)}</td><td>${Number(x.physical||0).toFixed(3)}</td><td>${Number(x.qty||0).toFixed(3)}</td><td>${money(x.rate)}</td><td>${money(x.value)}</td><td><span class="badge ${x.type==='SHORT'?'bshort':x.type==='EXCESS'?'bexcess':'bmatch'}">${x.type}</span></td><td>${canEdit?`<button class="btn light small-btn" onclick="editClosingQty('${esc(x.date)}','${esc(x.sku)}')">Edit Qty</button> <button class="btn danger small-btn" onclick="deleteClosingLine(${dataIndex})">Delete</button>`:'—'}</td></tr>`;
  }).join('');
  document.getElementById('closingTable').innerHTML=head+(body||'<tr><td colspan="11" style="text-align:center;color:#94a3b8">No closing entries</td></tr>');
 }
@@ -967,7 +1019,7 @@ function editClosingQty(date,sku){
  const idx=data.closings.findIndex(x=>String(x.date||'')===String(date||'')&&String(x.sku||'').toLowerCase()===String(sku||'').toLowerCase());
  if(idx<0)return alert('Closing record not found.');
  const rec=data.closings[idx];
- const currentSystem=Number(rec.system||0), currentPhysical=Number(rec.physical||0);
+ const currentSystem=Number(rec.system||0), currentPhysical=Number.isFinite(Number(rec.importedVariance))?Number(rec.importedVariance):Number(rec.physical||0);
  const systemText=prompt('Enter System Qty:',String(currentSystem));
  if(systemText===null)return;
  const physicalText=prompt('Enter Physical Qty:',String(currentPhysical));
@@ -1172,6 +1224,22 @@ async function deleteClosingDocument(index){
  data.audit.push({time:new Date().toLocaleString(),by:loggedEmail||'admin',action:'Closing Document Deleted'});
  save();renderAll();
  const el=document.getElementById('adminDocResult'); if(el)el.innerHTML='<span class="success">Document deleted.</span>';
+}
+
+async function clearInventoryClosingData(){
+ if(role!=='Admin')return alert('Admin only');
+ if(!confirm('This will permanently delete ALL Inventory Closing entries and ALL imported Counted Stock data. System Stock, Rates, Active Item Master, Users and Closing Schedule will remain. Continue?'))return;
+ if(!(await adminPasswordCheck('clear all Inventory Closing data')))return;
+ data.closings=[];
+ data.countedStock=[];
+ data.audit=remoteArray(data.audit);
+ data.audit.push({time:new Date().toLocaleString(),by:loggedEmail||'admin',action:'All Inventory Closing and Counted Stock cleared'});
+ data.maintenance=data.maintenance||{};
+ data.maintenance.inventoryClosingResetV2=true;
+ await saveRemote();
+ localStorage.setItem(KEY,JSON.stringify(data));
+ renderAll();
+ alert('Inventory Closing entries and Counted Stock have been cleared.');
 }
 
 function addClosing(){
@@ -1388,12 +1456,15 @@ function importCountedStockFile(input){
      imported.push({date:closingDate,itemNo:master.sku,itemName:master.item||itemName,uom,category:master.category||'',subCategory:master.subcat||'',countedQty});
    });
    data.countedStock=remoteArray(data.countedStock).filter(x=>String(x.date||'')!==closingDate).concat(imported);
+   // Bulk Counted Stock import uses ONE document number for the whole closing date.
+   // Manual one-by-one entries continue to receive their own unique document number.
+   const bulkDocNo=nextClosingDocumentNumber(closingDate);
    imported.forEach(c=>{
      const stock=stockForDate(c.itemNo,closingDate);
      const systemQty=stock?Number(stock.quantity_available):0;
      const rate=applicableRate(c.itemNo,closingDate,0);
      const idx=data.closings.findIndex(x=>x.date===closingDate && String(x.sku||'').toLowerCase()===c.itemNo.toLowerCase());
-     const rec={docNo:idx>=0?(data.closings[idx].docNo||nextClosingDocumentNumber(closingDate)):nextClosingDocumentNumber(closingDate),date:closingDate,sku:c.itemNo,item:c.itemName,uom:c.uom,cat:c.category,subcat:c.subCategory,system:systemQty,physical:systemQty+c.countedQty,rate:rate,importedVariance:c.countedQty};
+     const rec={docNo:idx>=0?(data.closings[idx].docNo||bulkDocNo):bulkDocNo,date:closingDate,sku:c.itemNo,item:c.itemName,uom:c.uom,cat:c.category,subcat:c.subCategory,system:systemQty,physical:c.countedQty,rate:rate};
      if(idx>=0)data.closings[idx]=rec; else data.closings.push(rec);
    });
    data.audit.push({time:new Date().toLocaleString(),by:loggedEmail||'admin',action:'Bulk Counted Stock Import'});
